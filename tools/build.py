@@ -36,7 +36,7 @@ SHEET = """<div class="sheet-bg" id="sheetBg" role="dialog" aria-modal="true" ar
 </div></div>"""
 # An id that already exists in the workbook would make the browser pick the
 # workbook's element instead (e.g. the "Closing" section is id="close").
-clash = set(re.findall(r'\bid="([^"]+)"', SHEET + ' id="skd"')) & set(re.findall(r'\bid="([^"]+)"', html))
+clash = set(re.findall(r'\bid="([^"]+)"', SHEET)) & set(re.findall(r'\bid="([^"]+)"', html))
 assert not clash, "ids already used in the workbook HTML: %s" % sorted(clash)
 html = html[:s.start()] + SHEET + '<script src="app.js"></script>' + html[s.end():]
 

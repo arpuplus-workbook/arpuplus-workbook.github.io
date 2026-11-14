@@ -89,33 +89,7 @@
     x.lineWidth = 4; x.lineCap = 'round'; x.lineJoin = 'round'; x.strokeStyle = '#1B1F2A';
     if (data._sk) { var im = new Image(); im.onload = function () { x.drawImage(im, 0, 0); }; im.src = data._sk; }
     var pos = function (e) { var r = c.getBoundingClientRect(); return { x: (e.clientX - r.left) * c.width / r.width, y: (e.clientY - r.top) * c.height / r.height }; };
-    // Drawing is off until the student taps "Draw", so a finger on the sketch
-    // area scrolls the page instead of drawing.
-    var drawing = false, skc0 = $('skc');
-    var skd = document.createElement('button');
-    skd.type = 'button'; skd.id = 'skd'; skd.className = 'btn ghost';
-    skd.style.marginRight = '8px';
-    if (skc0) skc0.parentNode.insertBefore(skd, skc0); else c.parentNode.insertBefore(skd, c.nextSibling);
-    var setDrawing = function (on) {
-      drawing = on;
-      skd.textContent = on ? '✓ Done' : '✏️ Draw';
-      skd.classList.toggle('armed', on);
-      c.style.touchAction = on ? 'none' : 'pan-x pan-y pinch-zoom';
-      c.style.borderColor = on ? 'var(--rust)' : '';
-      c.style.cursor = on ? 'crosshair' : '';
-    };
-    setDrawing(false);
-    skd.addEventListener('click', function () { setDrawing(!drawing); });
-    var flash = null;
-    c.addEventListener('click', function () {   // tapped the sketch without Draw on
-      if (drawing) return;
-      skd.classList.add('armed'); clearTimeout(flash);
-      flash = setTimeout(function () { if (!drawing) skd.classList.remove('armed'); }, 700);
-    });
-    c.addEventListener('pointerdown', function (e) {
-      if (!drawing) return;
-      down = true; last = pos(e); try { c.setPointerCapture(e.pointerId); } catch (_) {} e.preventDefault();
-    });
+    c.addEventListener('pointerdown', function (e) { down = true; last = pos(e); try { c.setPointerCapture(e.pointerId); } catch (_) {} e.preventDefault(); });
     c.addEventListener('pointermove', function (e) {
       if (!down) return;
       var p = pos(e); x.beginPath(); x.moveTo(last.x, last.y); x.lineTo(p.x, p.y); x.stroke(); last = p; e.preventDefault();

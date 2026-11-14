@@ -66,6 +66,13 @@
     f.row = row;
     f.padY = f.multi ? 5 : (f.h - LH) / 2;   // one-line boxes: first line centred like before
   });
+  // Fetch every stretch slice now (2.4 KB in total) so a growing box never
+  // waits on the network and flashes the dark background behind it.
+  var preloaded = ROWS.map(function (r) {
+    var im = new Image();
+    im.src = 'pages/strip-' + r.page + '-' + r.key + '.png';
+    return im;
+  });
   function rowsOn(p) { return ROWS.filter(function (r) { return r.page === p; }); }
   function offsetFn(rows, prop) {
     return function (y) {
@@ -124,6 +131,7 @@
   for (var i = 1; i <= NUM_PAGES; i++) {
     var pEl = el('section', 'page', book);
     pEl.setAttribute('aria-label', 'Page ' + i);
+    pEl.style.background = i === 1 ? '#1b1f2a' : '#f6f2ec'; // page colour while images load
     pages.push({ n: i, el: pEl, bg: el('div', 'bg', pEl), sig: null });
   }
 

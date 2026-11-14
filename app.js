@@ -1,206 +1,73 @@
-/* ArpuPlus Day 2 workbook: fill on any phone, export as PDF.
- * Every position below is in PDF points (page = 390 x 780 pt, origin top-left),
- * measured from the original workbook PDF, so the web page and the exported
- * PDF line up with the design exactly.
+/* ArpuPlus Day 2 workbook.
  *
- * Growing boxes: when an answer needs more room, the page is cut through the
- * middle of that row of boxes (where everything runs straight up and down) and
- * a thin slice of the design is stretched to the extra height. The box, its
- * card and everything below simply move down, on screen and in the PDF. */
+ * On screen: the workbook HTML as designed. Answers save on the phone as you
+ * type (same storage key and format as the original page), boxes grow with
+ * their text, and the sketch saves too.
+ *
+ * Export: instead of the browser's print dialog (unreliable on phones and
+ * missing in in-app browsers), the PDF is built right here from
+ * template.pdf: the workbook printed once, one page per section, with every
+ * box's position recorded in template.json. Each answer is written into its
+ * box; when an answer is longer than its box, the page is cut through the
+ * middle of that row of boxes and a thin slice is stretched, so the box, its
+ * card and everything below move down and the whole answer shows. */
 (function () {
   'use strict';
 
-  var PW = 390, PH = 780, NUM_PAGES = 4;
-  var KEY = 'arpuplus-day2-workbook-v1';
-  var INK = '#1b1f2a';
-  var FF = '"DM Sans", system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans Arabic", "Geeza Pro", Tahoma, sans-serif';
-  var FONT = 12, LH = FONT * 1.3, PADX = 7;
-
-  var FIELDS = [
-    { page: 1, name: 'name',         label: 'My name', x: 27, y: 280.28, w: 336, h: 32 },
-    { page: 1, name: 'team',         label: 'My team', x: 27, y: 344.78, w: 336, h: 32 },
-    { page: 1, name: 'date',         label: 'Date',    x: 27, y: 409.28, w: 336, h: 32 },
-    { page: 2, name: 'p1_task',      label: 'One recurring task I can drop, delegate or redesign', x: 43, y: 257.03, w: 304, h: 70, multi: true },
-    { page: 2, name: 'p1_blocks',    label: 'When my two strategy blocks will be', x: 43, y: 363.97, w: 304, h: 56, multi: true },
-    { page: 2, name: 'p1_interrupt', label: 'What is allowed to interrupt them',   x: 43, y: 456.91, w: 304, h: 56, multi: true },
-    { page: 2, name: 'p1_notes',     label: 'Additional notes to remember from this part', x: 43, y: 565.78, w: 304, h: 114, multi: true },
-    { page: 3, name: 'kpi_goal',     label: 'The team goal it supports',       x: 43, y: 224.42, w: 304, h: 42, multi: true },
-    { page: 3, name: 'kpi_kpi',      label: 'The KPI (outcome, not activity)', x: 43, y: 303.36, w: 304, h: 42, multi: true },
-    { page: 3, name: 'kpi_base',     label: 'Baseline', x: 43,  y: 382.3, w: 92, h: 30 },
-    { page: 3, name: 'kpi_target',   label: 'Target',   x: 149, y: 382.3, w: 92, h: 30 },
-    { page: 3, name: 'kpi_date',     label: 'By when',  x: 255, y: 382.3, w: 92, h: 30 },
-    { page: 3, name: 'kpi_lead',     label: 'Leading indicator', x: 43, y: 449.23, w: 304, h: 42, multi: true },
-    { page: 3, name: 'kpi_guard',    label: 'Guardrail',         x: 43, y: 528.17, w: 304, h: 42, multi: true },
-    { page: 3, name: 'kpi_review',   label: 'Review rhythm',     x: 43, y: 607.11, w: 304, h: 30 }
-  ];
-
-  // Replaces the iPhone-only instructions printed on pages 1 and 4.
-  var NOTES = [
-    { page: 1, x: 33, y: 466, w: 326, h: 126, bg: '#262b38', padX: 7.3, padY: 3.7, width: 300, blocks: [
-      { text: 'How to use this workbook', weight: 700, size: 12, lh: 18, color: '#f6f2ec' },
-      { text: '1. Tap any white box to type your answers.', weight: 400, size: 11.5, lh: 18, color: '#d9d2c7' },
-      { text: '2. Your answers save automatically on this phone.', weight: 400, size: 11.5, lh: 18, color: '#d9d2c7' },
-      { text: '3. When you finish, tap Export PDF at the bottom to save or share your copy.', weight: 400, size: 11.5, lh: 18, color: '#d9d2c7' }
-    ] },
-    { page: 4, x: 22, y: 128, w: 346, h: 36, bg: '#f6f2ec', padX: 2.3, padY: 0.6, width: 341, blocks: [
-      { text: 'Tap Draw under the box, then draw anywhere inside it with your finger. Tap Done to stop and scroll again.', weight: 400, size: 11.5, lh: 16, color: '#5f636c' }
-    ] }
-  ];
-
-  var SK = { page: 4, x: 26, y: 175, w: 338, h: 516 };   // inside the dashed sketch box
-  var TOOLS = { page: 4, x: 24, y: 702, w: 342, h: 30 };
-  var PEN = { w: 2.2, c: INK };
-
-  /* ---------- rows of boxes (boxes side by side grow together) ---------- */
-  var ROWS = [];
-  FIELDS.forEach(function (f) {
-    var row = null;
-    ROWS.forEach(function (r) { if (r.page === f.page && r.y === f.y) row = r; });
-    if (!row) {
-      var mid = f.y + f.h / 2;
-      // pages/strip-<page>-<key>.png: a 2pt slice of the page around `mid`, at 3x
-      row = { page: f.page, y: f.y, h: f.h, mid: mid, key: Math.floor(mid * 3 + 0.5), fields: [], extra: 0 };
-      ROWS.push(row);
-    }
-    row.fields.push(f);
-    f.row = row;
-    f.padY = f.multi ? 5 : (f.h - LH) / 2;   // one-line boxes: first line centred like before
-  });
-  // Fetch every stretch slice now (2.4 KB in total) so a growing box never
-  // waits on the network and flashes the dark background behind it.
-  var preloaded = ROWS.map(function (r) {
-    var im = new Image();
-    im.src = 'pages/strip-' + r.page + '-' + r.key + '.png';
-    return im;
-  });
-  function rowsOn(p) { return ROWS.filter(function (r) { return r.page === p; }); }
-  function offsetFn(rows, prop) {
-    return function (y) {
-      var s = 0;
-      rows.forEach(function (r) { if (r.mid < y) s += r[prop]; });
-      return s;
-    };
+  var KEY = 'arpuplus-day2-workbook', data = {};
+  function stored() { try { return JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { return null; } }
+  data = stored() || {};
+  // Save only the answer that changed, on top of what is stored, so two open
+  // tabs of the workbook never overwrite each other's answers.
+  function save(k) {
+    try {
+      var cur = stored() || {};
+      if (data[k] === undefined) delete cur[k]; else cur[k] = data[k];
+      localStorage.setItem(KEY, JSON.stringify(cur));
+    } catch (e) {}
   }
-
-  /* ---------- state ---------- */
-  var state = { fields: {}, strokes: [] };
-  var storageOk = true;
-  try {
-    var saved = JSON.parse(localStorage.getItem(KEY) || 'null');
-    if (saved && typeof saved === 'object') {
-      state.fields = saved.fields || {};
-      state.strokes = Array.isArray(saved.strokes) ? saved.strokes : [];
-    }
-  } catch (e) { storageOk = false; }
-
-  var saveTimer = null;
-  function save() {
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(function () {
-      try { localStorage.setItem(KEY, JSON.stringify(state)); storageOk = true; }
-      catch (e) { storageOk = false; }
-      setStatus();
-    }, 250);
-  }
-
+  function grow(t) { t.style.height = 'auto'; t.style.height = (t.scrollHeight + 2) + 'px'; }
   var $ = function (id) { return document.getElementById(id); };
-  var statusEl = $('status');
-  function setStatus() {
-    statusEl.innerHTML = storageOk
-      ? '<b>✓ Saved on this phone</b>'
-      : '<b>Can’t save on this phone.</b> Export before you close this page.';
-  }
 
-  /* ---------- helpers ---------- */
-  function U(v) { return 'calc(var(--u) * ' + v + 'px)'; }
-  function place(elm, x, y, w, h) {
-    elm.style.left = U(x); elm.style.top = U(y);
-    elm.style.width = U(w); elm.style.height = U(h);
-  }
-  function el(tag, cls, parent) {
-    var e = document.createElement(tag);
-    if (cls) e.className = cls;
-    if (parent) parent.appendChild(e);
-    return e;
-  }
-
-  /* ---------- build the pages ---------- */
-  var book = $('book');
-  var pages = [];
-  var items = []; // things that move down when a box above them grows
-  for (var i = 1; i <= NUM_PAGES; i++) {
-    var pEl = el('section', 'page', book);
-    pEl.setAttribute('aria-label', 'Page ' + i);
-    pEl.style.background = i === 1 ? '#1b1f2a' : '#f6f2ec'; // page colour while images load
-    pages.push({ n: i, el: pEl, bg: el('div', 'bg', pEl), sig: null });
-  }
-
-  NOTES.forEach(function (n) {
-    var box = el('div', 'abs note', pages[n.page - 1].el);
-    box.style.background = n.bg;
-    box.style.padding = U(n.padY) + ' 0 0 ' + U(n.padX);
-    var inner = el('div', '', box);
-    inner.style.width = U(n.width);
-    n.blocks.forEach(function (b) {
-      var d = el('div', '', inner);
-      d.textContent = b.text;
-      d.style.font = b.weight + ' ' + U(b.size) + ' / ' + U(b.lh) + ' ' + FF;
-      d.style.color = b.color;
-    });
-    items.push({ el: box, page: n.page, x: n.x, y: n.y, w: n.w, h: n.h });
-  });
-
-  var inputs = [];
-  FIELDS.forEach(function (f) {
-    var ta = el('textarea', 'f', pages[f.page - 1].el);
-    ta.name = f.name;
-    ta.rows = 1;
-    ta.dir = 'auto';
-    ta.setAttribute('aria-label', f.label);
-    ta.setAttribute('autocomplete', f.name === 'name' ? 'name' : 'off');
-    ta.spellcheck = true;
-    ta.style.padding = U(f.padY) + ' ' + U(PADX);
-    if (!f.multi) ta.setAttribute('enterkeyhint', 'next');
-    ta.value = state.fields[f.name] || '';
-    ta.addEventListener('input', function () {
-      if (!f.multi && /[\r\n]/.test(ta.value)) ta.value = ta.value.replace(/\s*[\r\n]+\s*/g, ' ');
-      state.fields[f.name] = ta.value;
-      relayout(f.page);
-      save();
-    });
-    f.el = ta;
-    inputs.push(ta);
-  });
-  FIELDS.forEach(function (f, idx) {
-    if (f.multi) return;
-    f.el.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter') { e.preventDefault(); var nx = inputs[idx + 1]; if (nx) nx.focus(); else f.el.blur(); }
+  /* ---------- answers: restore, autosave, grow ---------- */
+  var els = Array.prototype.slice.call(document.querySelectorAll('[data-k]'));
+  var boxes = els.filter(function (el) { return el.tagName === 'TEXTAREA'; });
+  els.forEach(function (el) {
+    var k = el.getAttribute('data-k');
+    if (el.type === 'checkbox') {
+      el.checked = !!data[k];
+      el.addEventListener('change', function () { data[k] = el.checked; save(k); });
+      return;
+    }
+    if (data[k]) el.value = data[k];
+    if (el.tagName === 'TEXTAREA') grow(el);
+    el.addEventListener('input', function () {
+      // one-line boxes wrap and grow, but never hold line breaks
+      if (el.classList.contains('one') && /[\r\n]/.test(el.value)) el.value = el.value.replace(/\s*[\r\n]+\s*/g, ' ');
+      data[k] = el.value; save(k);
+      if (el.tagName === 'TEXTAREA') grow(el);
+      if (k === 'name') owner();
     });
   });
+  // Enter in a one-line box moves to the next box, like a form
+  boxes.forEach(function (t, i) {
+    if (!t.classList.contains('one')) return;
+    t.setAttribute('enterkeyhint', 'next');
+    t.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); var nx = boxes[i + 1]; if (nx) nx.focus(); else t.blur(); }
+    });
+  });
+  function growAll() { boxes.forEach(grow); }
+  window.addEventListener('load', growAll);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(growAll);
+  var lastW = window.innerWidth;
+  window.addEventListener('resize', function () { if (window.innerWidth !== lastW) { lastW = window.innerWidth; growAll(); } });
 
-  /* ---------- sketch (page 4) ---------- */
-  var sk = el('canvas', 'abs', pages[SK.page - 1].el);
-  sk.id = 'sketch';
-  sk.setAttribute('aria-label', 'Sketch space. Tap Draw first, then draw with your finger.');
-  items.push({ el: sk, page: SK.page, x: SK.x, y: SK.y, w: SK.w, h: SK.h });
-  var skCtx = sk.getContext('2d');
-
-  var tools = el('div', 'abs tools', pages[TOOLS.page - 1].el);
-  items.push({ el: tools, page: TOOLS.page, x: TOOLS.x, y: TOOLS.y, w: TOOLS.w, h: TOOLS.h });
-  var drawBtn = el('button', 'primary', tools); drawBtn.type = 'button';
-  var undoBtn = el('button', '', tools); undoBtn.type = 'button'; undoBtn.textContent = 'Undo';
-  var wipeBtn = el('button', '', tools); wipeBtn.type = 'button'; wipeBtn.textContent = 'Clear drawing';
-
-  var drawing = false, cur = null;
-  function setDrawing(on) {
-    drawing = on;
-    sk.classList.toggle('on', on);
-    drawBtn.classList.toggle('on', on);
-    drawBtn.textContent = on ? '✓ Done' : '✏️ Draw';
+  function ownerText() {
+    return data.name ? ('Workbook of ' + data.name + ' · ArpuPlus Leadership Program · Day 2') : 'ArpuPlus Leadership Program · Day 2';
   }
-  setDrawing(false);
-  drawBtn.addEventListener('click', function () { setDrawing(!drawing); });
-  undoBtn.addEventListener('click', function () { state.strokes.pop(); redrawSketch(); save(); });
+  function owner() { var o = $('owner'); if (o) o.textContent = ownerText(); }
+  owner();
 
   // Two-tap confirm inside the page. Browser pop-ups (confirm()) are silently
   // blocked in many in-app browsers (WhatsApp, Instagram...) and in some phones.
@@ -214,159 +81,40 @@
       timer = setTimeout(reset, 3000);
     });
   }
-  tapTwice(wipeBtn, 'Tap again to clear', function () { state.strokes = []; redrawSketch(); save(); });
 
-  function drawStrokes(ctx, strokes, scale) {
-    ctx.setTransform(scale, 0, 0, scale, 0, 0);
-    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-    strokes.forEach(function (s) {
-      var pts = s.p;
-      if (!pts || !pts.length) return;
-      ctx.strokeStyle = ctx.fillStyle = s.c || PEN.c;
-      ctx.lineWidth = s.w || PEN.w;
-      if (pts.length < 3) {
-        ctx.beginPath(); ctx.arc(pts[0][0], pts[0][1], (s.w || PEN.w) / 2, 0, Math.PI * 2); ctx.fill();
-        if (pts.length === 2) { ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]); ctx.lineTo(pts[1][0], pts[1][1]); ctx.stroke(); }
-        return;
-      }
-      ctx.beginPath();
-      ctx.moveTo(pts[0][0], pts[0][1]);
-      for (var k = 1; k < pts.length - 1; k++) {
-        var mx = (pts[k][0] + pts[k + 1][0]) / 2, my = (pts[k][1] + pts[k + 1][1]) / 2;
-        ctx.quadraticCurveTo(pts[k][0], pts[k][1], mx, my);
-      }
-      var last = pts[pts.length - 1];
-      ctx.lineTo(last[0], last[1]);
-      ctx.stroke();
+  /* ---------- sketch ---------- */
+  var c = $('sk');
+  if (c) {
+    var x = c.getContext('2d'), down = false, last = null;
+    x.lineWidth = 4; x.lineCap = 'round'; x.lineJoin = 'round'; x.strokeStyle = '#1B1F2A';
+    if (data._sk) { var im = new Image(); im.onload = function () { x.drawImage(im, 0, 0); }; im.src = data._sk; }
+    var pos = function (e) { var r = c.getBoundingClientRect(); return { x: (e.clientX - r.left) * c.width / r.width, y: (e.clientY - r.top) * c.height / r.height }; };
+    c.addEventListener('pointerdown', function (e) { down = true; last = pos(e); try { c.setPointerCapture(e.pointerId); } catch (_) {} e.preventDefault(); });
+    c.addEventListener('pointermove', function (e) {
+      if (!down) return;
+      var p = pos(e); x.beginPath(); x.moveTo(last.x, last.y); x.lineTo(p.x, p.y); x.stroke(); last = p; e.preventDefault();
+    });
+    var up = function () { if (!down) return; down = false; try { data._sk = c.toDataURL('image/png'); save('_sk'); } catch (e) {} };
+    c.addEventListener('pointerup', up); c.addEventListener('pointercancel', up);
+    var skc = $('skc');
+    if (skc) tapTwice(skc, 'Tap again to clear', function () { x.clearRect(0, 0, c.width, c.height); delete data._sk; save('_sk'); });
+  }
+
+  /* ---------- printing still works (browser menu, or "Print instead") ---------- */
+  function before() {
+    document.querySelectorAll('textarea').forEach(function (t) {
+      var d = t.nextElementSibling;
+      if (!d || !d.classList || !d.classList.contains('pv')) { d = document.createElement('div'); d.className = 'pv'; t.parentNode.insertBefore(d, t.nextSibling); }
+      d.textContent = t.value;
     });
   }
-  function redrawSketch() {
-    var r = sk.getBoundingClientRect();
-    var dpr = Math.min(window.devicePixelRatio || 1, 3);
-    var wpx = Math.max(1, Math.round(r.width * dpr)), hpx = Math.max(1, Math.round(r.height * dpr));
-    if (sk.width !== wpx || sk.height !== hpx) { sk.width = wpx; sk.height = hpx; }
-    skCtx.setTransform(1, 0, 0, 1, 0, 0);
-    skCtx.clearRect(0, 0, sk.width, sk.height);
-    drawStrokes(skCtx, state.strokes, wpx / SK.w);
-  }
-  function toPt(e) {
-    var r = sk.getBoundingClientRect();
-    var x = (e.clientX - r.left) / r.width * SK.w, y = (e.clientY - r.top) / r.height * SK.h;
-    return [Math.round(Math.max(0, Math.min(SK.w, x)) * 10) / 10, Math.round(Math.max(0, Math.min(SK.h, y)) * 10) / 10];
-  }
-  sk.addEventListener('pointerdown', function (e) {
-    if (!drawing) return;
-    e.preventDefault();
-    try { sk.setPointerCapture(e.pointerId); } catch (_) {}
-    cur = { w: PEN.w, c: PEN.c, p: [toPt(e)] };
-    state.strokes.push(cur);
-    redrawSketch();
-  });
-  sk.addEventListener('pointermove', function (e) {
-    if (!cur) return;
-    e.preventDefault();
-    var evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
-    if (!evs.length) evs = [e];
-    evs.forEach(function (ev) { cur.p.push(toPt(ev)); });
-    redrawSketch();
-  });
-  function endStroke() { if (cur) { cur = null; save(); } }
-  sk.addEventListener('pointerup', endStroke);
-  sk.addEventListener('pointercancel', endStroke);
-
-  /* ---------- layout: growing boxes ---------- */
-  var UPX = 1; // CSS px per PDF point
-
-  // Page background = slices of the page image, with a stretched 2pt strip
-  // wherever a row of boxes grew.
-  function drawBg(P, cuts) {
-    P.bg.innerHTML = '';
-    var url = 'url(pages/page-' + P.n + '.png)';
-    function seg(a, b, off) {
-      var d = el('div', 'seg', P.bg);
-      d.style.top = U(a + off); d.style.height = U(b - a);
-      d.style.backgroundImage = url;
-      d.style.backgroundPosition = '0 ' + U(-a);
-    }
-    var a = 0, off = 0;
-    cuts.forEach(function (c) {
-      seg(a, c.mid, off);
-      var s = el('div', 'strip', P.bg);
-      s.style.top = 'calc(var(--u) * ' + (c.mid + off) + 'px - 1px)';
-      s.style.height = 'calc(var(--u) * ' + c.extra + 'px + 2px)';
-      s.style.backgroundImage = 'url(pages/strip-' + P.n + '-' + c.key + '.png)';
-      off += c.extra; a = c.mid;
-    });
-    seg(a, PH, off);
-  }
-
-  function relayout(pn) {
-    var P = pages[pn - 1];
-    var rows = rowsOn(pn);
-    rows.forEach(function (r) {
-      var need = 0;
-      r.fields.forEach(function (f) {
-        f.el.style.height = '0px';
-        need = Math.max(need, f.el.scrollHeight / UPX);
-      });
-      // a new line adds ~15pt, so ignore sub-pixel rounding noise
-      r.extra = need - r.h > 2 ? Math.ceil(need - r.h) : 0;
-    });
-    var off = offsetFn(rows, 'extra');
-    var total = 0;
-    rows.forEach(function (r) { total += r.extra; });
-    P.el.style.height = U(PH + total);
-    rows.forEach(function (r) {
-      r.fields.forEach(function (f) { place(f.el, f.x, f.y + off(f.y), f.w, f.h + r.extra); });
-    });
-    items.forEach(function (it) { if (it.page === pn) place(it.el, it.x, it.y + off(it.y), it.w, it.h); });
-    var cuts = rows.filter(function (r) { return r.extra > 0; }).sort(function (a, b) { return a.mid - b.mid; });
-    var sig = cuts.map(function (c) { return c.key + ':' + c.extra; }).join('|') || 'flat';
-    if (sig !== P.sig) { P.sig = sig; drawBg(P, cuts); }
-  }
-
-  var lastWidth = 0;
-  function layout(force) {
-    var w = book.clientWidth || PW;
-    if (!force && w === lastWidth) return;
-    lastWidth = w;
-    UPX = w / PW;
-    document.documentElement.style.setProperty('--u', String(UPX));
-    for (var p = 1; p <= NUM_PAGES; p++) relayout(p);
-    redrawSketch();
-  }
-  if (window.ResizeObserver) new ResizeObserver(function () { layout(false); }).observe(book);
-  window.addEventListener('resize', function () { layout(false); });
-  layout(true);
-  if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { layout(true); });
-
-  // iPhone zooms the page whenever a small text box gets focus; stop that
-  // (pinch-zoom still works on iOS).
-  var isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-  if (isIOS) {
-    var vp = document.querySelector('meta[name=viewport]');
-    vp.setAttribute('content', vp.getAttribute('content') + ', maximum-scale=1');
-  }
-
-  // Hide the bottom bar while typing so it doesn't sit on top of the keyboard.
-  var bar = $('bar');
-  document.addEventListener('focusin', function (e) { if (e.target.classList && e.target.classList.contains('f')) bar.classList.add('hidden'); });
-  document.addEventListener('focusout', function () {
-    setTimeout(function () {
-      var a = document.activeElement;
-      if (!(a && a.classList && a.classList.contains('f'))) bar.classList.remove('hidden');
-    }, 50);
-  });
-
-  /* ---------- clear everything ---------- */
-  tapTwice($('clearAll'), 'Tap again to clear everything', function () {
-    state = { fields: {}, strokes: [] };
-    inputs.forEach(function (inp) { inp.value = ''; });
-    layout(true);
-    save();
-  });
+  window.addEventListener('beforeprint', before);
 
   /* ---------- PDF export ---------- */
+  var S = 0.75;                 // PDF points per CSS px
+  var NAVY = '#1B1F2A', MUTE = '#5F636C', TEAL = '#1D6B66';
+  var FONT = 'LF, Arial, "Noto Sans Arabic", "Geeza Pro", Tahoma, sans-serif';
+
   var pdfLibPromise = null;
   function loadPdfLib() {
     if (window.PDFLib) return Promise.resolve(window.PDFLib);
@@ -381,17 +129,18 @@
     }
     return pdfLibPromise;
   }
-  setTimeout(function () { loadPdfLib().catch(function () {}); }, 4000);
+  setTimeout(function () { loadPdfLib().catch(function () {}); }, 5000);
 
+  function get(url, kind) {
+    return fetch(url, { cache: 'no-cache' }).then(function (r) {
+      if (!r.ok) throw new Error('Could not load ' + url + ' (' + r.status + ').');
+      return kind === 'json' ? r.json() : r.arrayBuffer();
+    });
+  }
   function fontsReady() {
     if (!document.fonts || !document.fonts.load) return Promise.resolve();
-    return Promise.all([
-      document.fonts.load('400 12px "DM Sans"'),
-      document.fonts.load('700 12px "DM Sans"')
-    ]).catch(function () {});
+    return document.fonts.load('400 16px LF').catch(function () {});
   }
-
-  function fontStr(size, weight) { return (weight || 400) + ' ' + size + 'px ' + FF; }
   function isRtl(text) {
     var m = text.match(/[A-Za-zÀ-ɏ]|[֐-ࣿיִ-﷿ﹰ-﻿]/);
     return !!m && /[֐-ࣿיִ-﷿ﹰ-﻿]/.test(m[0]);
@@ -406,9 +155,8 @@
         var test = line ? line + ' ' + word : word;
         if (ctx.measureText(test).width <= maxW) { line = test; return; }
         if (line) out.push(line);
-        // a single word longer than the box: break it by characters
         line = '';
-        Array.from(word).forEach(function (ch) {
+        Array.from(word).forEach(function (ch) {   // a word wider than the box
           if (ctx.measureText(line + ch).width > maxW && line) { out.push(line); line = ''; }
           line += ch;
         });
@@ -421,171 +169,192 @@
   // Baseline of a line placed like CSS does: centred inside its line box.
   function baseline(ctx, size, lineTop, lh) {
     var m = ctx.measureText('Hg');
-    var a = m.fontBoundingBoxAscent || size * 0.99, d = m.fontBoundingBoxDescent || size * 0.31;
+    var a = m.fontBoundingBoxAscent || size * 0.95, d = m.fontBoundingBoxDescent || size * 0.25;
     return lineTop + (lh - (a + d)) / 2 + a;
   }
-  // Canvas for a w x h pt area; 4 px per pt, less for very tall areas so
-  // phones stay under their canvas size limit.
+  // canvas for a w x h CSS-px area: 3 canvas px per CSS px (4 per PDF point),
+  // less for very tall areas so phones stay under their canvas size limit
   function makeCanvas(w, h) {
-    var s = Math.max(1, Math.min(4, Math.sqrt(12e6 / (w * h))));
-    var c = document.createElement('canvas');
-    c.width = Math.ceil(w * s); c.height = Math.ceil(h * s);
-    c.ptScale = s;
-    var ctx = c.getContext('2d');
+    var s = Math.max(1, Math.min(3, Math.sqrt(12e6 / (w * h))));
+    var cv = document.createElement('canvas');
+    cv.width = Math.ceil(w * s); cv.height = Math.ceil(h * s);
+    var ctx = cv.getContext('2d');
     ctx.scale(s, s);
     ctx.textBaseline = 'alphabetic';
-    return c;
+    return cv;
   }
   var measureCtx = document.createElement('canvas').getContext('2d');
 
   function answerText(f) {
-    var v = state.fields[f.name] || '';
-    return f.multi ? v : v.replace(/\s*[\r\n]+\s*/g, ' ');
+    var v = data[f.k] || '';
+    return f.one ? v.replace(/\s*[\r\n]+\s*/g, ' ') : v;
   }
-  function answerLines(ctx, f, size) {
-    ctx.font = fontStr(size);
-    return wrap(ctx, answerText(f), f.w - 2 * PADX);
+  function answerLines(ctx, f) {
+    ctx.font = '400 ' + f.fs + 'px ' + FONT;
+    return wrap(ctx, answerText(f), f.w - 2 * (f.bw + f.pl));
   }
-
   function answerCanvas(f, H) {
-    var text = answerText(f);
-    var c = makeCanvas(f.w, H), ctx = c.getContext('2d');
+    var text = answerText(f), cv = makeCanvas(f.w, H), ctx = cv.getContext('2d');
     var rtl = isRtl(text);
-    ctx.fillStyle = INK;
+    ctx.fillStyle = NAVY;
     ctx.direction = rtl ? 'rtl' : 'ltr';
     ctx.textAlign = rtl ? 'right' : 'left';
-    var tx = rtl ? f.w - PADX : PADX;
-    var size = FONT, lines = answerLines(ctx, f, size);
-    // the box was already grown to fit; shrinking is only a safety net
-    while (lines.length * size * 1.3 + 2 * f.padY > H + 0.5 && size > 6) {
-      size -= 0.5; lines = answerLines(ctx, f, size);
-    }
-    var lh = size * 1.3;
-    lines.forEach(function (ln, k) { ctx.fillText(ln, tx, baseline(ctx, size, f.padY + k * lh, lh)); });
-    return c;
+    var lines = answerLines(ctx, f);
+    var tx = rtl ? f.w - f.bw - f.pl : f.bw + f.pl;
+    lines.forEach(function (ln, i) { ctx.fillText(ln, tx, baseline(ctx, f.fs, f.bw + f.pt + i * f.lh, f.lh)); });
+    return cv;
   }
-
-  function noteCanvas(n) {
-    var c = makeCanvas(n.w, n.h), ctx = c.getContext('2d');
-    ctx.fillStyle = n.bg; ctx.fillRect(0, 0, n.w, n.h);
-    var top = n.padY;
-    n.blocks.forEach(function (b) {
-      ctx.font = fontStr(b.size, b.weight);
-      ctx.fillStyle = b.color;
-      wrap(ctx, b.text, n.width).forEach(function (ln) {
-        ctx.fillText(ln, n.padX, baseline(ctx, b.size, top, b.lh));
-        top += b.lh;
-      });
-    });
-    return c;
+  function tickCanvas(w, h) {
+    var cv = makeCanvas(w, h), ctx = cv.getContext('2d'), r = 3;
+    ctx.fillStyle = TEAL;
+    ctx.beginPath();
+    ctx.moveTo(r, 0); ctx.lineTo(w - r, 0); ctx.quadraticCurveTo(w, 0, w, r); ctx.lineTo(w, h - r); ctx.quadraticCurveTo(w, h, w - r, h);
+    ctx.lineTo(r, h); ctx.quadraticCurveTo(0, h, 0, h - r); ctx.lineTo(0, r); ctx.quadraticCurveTo(0, 0, r, 0); ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = Math.max(2, w * 0.12); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.beginPath(); ctx.moveTo(w * 0.24, h * 0.53); ctx.lineTo(w * 0.42, h * 0.71); ctx.lineTo(w * 0.77, h * 0.31); ctx.stroke();
+    return cv;
   }
-
-  function fileName() {
-    var who = (state.fields.name || '').replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '').trim().slice(0, 40);
-    return 'ArpuPlus Day 2 Workbook' + (who ? ' - ' + who : '') + '.pdf';
+  function ownerCanvas(w) {
+    var h = 13.5, cv = makeCanvas(w, h), ctx = cv.getContext('2d');
+    ctx.font = '400 9px ' + FONT; ctx.fillStyle = MUTE; ctx.textAlign = 'center';
+    ctx.fillText(ownerText(), w / 2, baseline(ctx, 9, 0, h));
+    return cv;
   }
 
   function buildPdf() {
-    var L;
-    return Promise.all([loadPdfLib(), fontsReady()]).then(function (r) {
-      L = r[0];
-      return fetch('workbook.pdf', { cache: 'no-cache' });
-    }).then(function (res) {
-      if (!res.ok) throw new Error('Could not load the workbook file (' + res.status + ').');
-      return res.arrayBuffer();
-    }).then(function (bytes) {
-      return L.PDFDocument.load(bytes);
-    }).then(function (src) {
-      // How much each row of boxes must grow in the PDF to fit its answer.
-      ROWS.forEach(function (r) {
-        var need = 0;
-        r.fields.forEach(function (f) {
-          if (!answerText(f).trim()) return;
-          need = Math.max(need, answerLines(measureCtx, f, FONT).length * LH + 2 * f.padY);
-        });
-        r.pdfExtra = need - r.h > 0.5 ? Math.ceil(need - r.h) : 0;
-      });
-      return L.PDFDocument.create().then(function (out) {
-        return out.embedPages(src.getPages()).then(function (embedded) {
-          var jobs = [];
-          for (var pn = 1; pn <= NUM_PAGES; pn++) {
-            (function (pn) {
-              var rows = rowsOn(pn), E = embedded[pn - 1];
-              var total = 0;
-              rows.forEach(function (r) { total += r.pdfExtra; });
-              var H = PH + total, off = offsetFn(rows, 'pdfExtra');
-              var page = out.addPage([PW, H]);
-
-              // the design, cut and stretched where rows grew
-              var cuts = rows.filter(function (r) { return r.pdfExtra > 0; }).sort(function (a, b) { return a.mid - b.mid; });
-              var clipped = function (x, y, w, h, draw) {
-                page.pushOperators(L.pushGraphicsState(), L.rectangle(x, y, w, h), L.clip(), L.endPath());
-                draw();
-                page.pushOperators(L.popGraphicsState());
-              };
-              if (!cuts.length) {
-                page.drawPage(E, { x: 0, y: 0 });
-              } else {
-                var a = 0, o = 0;
-                var band = function (from, to, o, padTop, padBottom) {
-                  var top = H - (from + o) + padTop, bottom = H - (to + o) - padBottom;
-                  clipped(0, bottom, PW, top - bottom, function () { page.drawPage(E, { x: 0, y: H - PH - o }); });
-                };
-                cuts.forEach(function (c) {
-                  band(a, c.mid, o, a ? 0.5 : 0, 0.5);
-                  // stretch the 2pt slice [mid-1, mid+1] to the extra height
-                  var k = c.pdfExtra / 2, bottom = H - (c.mid + o + c.pdfExtra);
-                  clipped(0, bottom - 0.5, PW, c.pdfExtra + 1, function () {
-                    page.drawPage(E, { x: 0, y: bottom - k * (PH - c.mid - 1), xScale: 1, yScale: k });
-                  });
-                  o += c.pdfExtra; a = c.mid;
-                });
-                band(a, PH, o, 0.5, 0);
-              }
-
-              var put = function (x, y, w, h, canvas) {
-                jobs.push(out.embedPng(canvas.toDataURL('image/png')).then(function (img) {
-                  page.drawImage(img, { x: x, y: H - y - h, width: w, height: h });
-                }));
-              };
-              NOTES.forEach(function (n) { if (n.page === pn) put(n.x, n.y + off(n.y), n.w, n.h, noteCanvas(n)); });
-              rows.forEach(function (r) {
-                r.fields.forEach(function (f) {
-                  if (answerText(f).trim()) put(f.x, f.y + off(f.y), f.w, f.h + r.pdfExtra, answerCanvas(f, f.h + r.pdfExtra));
-                });
-              });
-              if (pn === SK.page && state.strokes.length) {
-                var c = makeCanvas(SK.w, SK.h);
-                drawStrokes(c.getContext('2d'), state.strokes, c.ptScale);
-                put(SK.x, SK.y + off(SK.y), SK.w, SK.h, c);
-              }
-            })(pn);
-          }
-          return Promise.all(jobs).then(function () {
-            var who = (state.fields.name || '').trim();
-            out.setTitle('ArpuPlus Leadership Program · Day 2 Workbook' + (who ? ' · ' + who : ''));
-            out.setAuthor('Red Rock International');
-            out.setCreator('ArpuPlus Day 2 Workbook');
-            out.setCreationDate(new Date());
-            out.setModificationDate(new Date());
-            return out.save();
+    var L, T;
+    // export the latest saved answers (another open tab may have added some)
+    var latest = stored();
+    if (latest) Object.keys(latest).forEach(function (k) { if (!(k in data)) data[k] = latest[k]; });
+    return Promise.all([loadPdfLib(), fontsReady(), get('template.json', 'json'), get('template.pdf')]).then(function (r) {
+      L = r[0]; T = r[2];
+      return Promise.all([L.PDFDocument.load(r[3]), L.PDFDocument.create()]);
+    }).then(function (docs) {
+      var src = docs[0], out = docs[1];
+      return out.embedPages(src.getPages()).then(function (E) {
+        var PW = T.pw, jobs = [], pages = [], pageInfo = [];
+        var imgCache = {};
+        function img(key, make) {
+          if (!imgCache[key]) imgCache[key] = out.embedPng(make().toDataURL('image/png'));
+          return imgCache[key];
+        }
+        T.pages.forEach(function (P, pi) {
+          // rows of boxes on this page (boxes side by side grow together)
+          var rows = [];
+          T.fields.forEach(function (f) {
+            if (f.p !== pi) return;
+            var row = null;
+            rows.forEach(function (r) { if (Math.abs(r.y - f.y) < 0.5) row = r; });
+            if (!row) { row = { y: f.y, h: f.h, mid: f.y + f.h / 2, fields: [], extra: 0 }; rows.push(row); }
+            row.fields.push(f); f.row = row;
           });
+          rows.forEach(function (r) {
+            var need = 0;
+            r.fields.forEach(function (f) {
+              if (!answerText(f).trim()) return;
+              need = Math.max(need, answerLines(measureCtx, f).length * f.lh + 2 * (f.pt + f.bw));
+            });
+            r.extra = need - r.h > 0.5 ? Math.ceil(need - r.h) : 0;
+          });
+          var off = function (y) { var s = 0; rows.forEach(function (r) { if (r.mid < y) s += r.extra; }); return s; };
+          // Template pages are a hair taller or shorter than their section
+          // (Chrome rounds page sizes). Content is anchored to the page top,
+          // so use the shorter of the two: only bottom padding is ever trimmed.
+          var ph = P.ph || P.h * S;               // real template page height, pt
+          var base = Math.min(P.h, ph / S);       // section height used here, px
+          var H = base; rows.forEach(function (r) { H += r.extra; });
+          var page = out.addPage([PW * S, H * S]);
+          pages.push(page); pageInfo.push({ H: H, off: off });
+          var Ep = E[pi];
+
+          // the section's design, cut and stretched where rows grew
+          var clipped = function (y0, hh, draw) {   // y0/hh in PDF points from the bottom
+            page.pushOperators(L.pushGraphicsState(), L.rectangle(0, y0, PW * S, hh), L.clip(), L.endPath());
+            draw();
+            page.pushOperators(L.popGraphicsState());
+          };
+          var cuts = rows.filter(function (r) { return r.extra > 0; }).sort(function (a, b) { return a.mid - b.mid; });
+          // template page drawn with its top at `o` px below our page top
+          var at = function (o) { return (H - o) * S - ph; };
+          if (!cuts.length) {
+            page.drawPage(Ep, { x: 0, y: at(0) });
+          } else {
+            var a = 0, o = 0;
+            var band = function (from, to, o, padTop, padBottom) {
+              var top = (H - (from + o)) * S + padTop, bottom = (H - (to + o)) * S - padBottom;
+              clipped(bottom, top - bottom, function () { page.drawPage(Ep, { x: 0, y: at(o) }); });
+            };
+            cuts.forEach(function (cut) {
+              band(a, cut.mid, o, a ? 0.5 : 0, 0.5);
+              // stretch the 2px slice [mid-1, mid+1] to the extra height
+              var k = cut.extra / 2, tb = (H - (cut.mid + o + cut.extra)) * S;
+              clipped(tb - 0.5, cut.extra * S + 1, function () {
+                page.drawPage(Ep, { x: 0, y: tb - k * (ph - (cut.mid + 1) * S), xScale: 1, yScale: k });
+              });
+              o += cut.extra; a = cut.mid;
+            });
+            band(a, base, o, 0.5, 0);
+          }
+
+          var put = function (imgPromise, bx, by, bw, bh) {
+            jobs.push(imgPromise.then(function (im) {
+              page.drawImage(im, { x: bx * S, y: (H - by - bh) * S, width: bw * S, height: bh * S });
+            }));
+          };
+          rows.forEach(function (r) {
+            r.fields.forEach(function (f) {
+              if (!answerText(f).trim()) return;
+              var hh = f.h + r.extra;
+              put(out.embedPng(answerCanvas(f, hh).toDataURL('image/png')), f.x, f.y + off(f.y), f.w, hh);
+            });
+          });
+          T.checks.forEach(function (ck) {
+            if (ck.p === pi && data[ck.k]) put(img('tick' + ck.w + 'x' + ck.h, function () { return tickCanvas(ck.w, ck.h); }), ck.x, ck.y + off(ck.y), ck.w, ck.h);
+          });
+          if (T.sketch && T.sketch.p === pi && data._sk) {
+            put(out.embedPng(data._sk), T.sketch.x, T.sketch.y + off(T.sketch.y), T.sketch.w, T.sketch.h);
+          }
+          put(img('owner', function () { return ownerCanvas(PW); }), 0, H - 4 - 13.5, PW, 13.5);
+        });
+
+        // clickable links: the video, and the contents page jumping to each part
+        T.links.forEach(function (ln) {
+          var info = pageInfo[ln.p], yy = ln.y + info.off(ln.y);
+          var rect = [ln.x * S, (info.H - yy - ln.h) * S, (ln.x + ln.w) * S, (info.H - yy) * S];
+          var dict = { Type: 'Annot', Subtype: 'Link', Rect: rect, Border: [0, 0, 0] };
+          if (ln.url) dict.A = { Type: 'Action', S: 'URI', URI: L.PDFString.of(ln.url) };
+          else if (ln.to >= 0) dict.Dest = [pages[ln.to].ref, 'Fit'];
+          else return;
+          pages[ln.p].node.addAnnot(out.context.register(out.context.obj(dict)));
+        });
+
+        return Promise.all(jobs).then(function () {
+          var who = (data.name || '').trim();
+          out.setTitle('ArpuPlus Leadership Program · Day 2 Workbook' + (who ? ' · ' + who : ''));
+          out.setAuthor('Red Rock International');
+          out.setCreator('ArpuPlus Day 2 Workbook');
+          out.setCreationDate(new Date());
+          out.setModificationDate(new Date());
+          return out.save();
         });
       });
     });
   }
   window.__buildWorkbookPdf = buildPdf; // used by automated checks
 
+  function fileName() {
+    var who = (data.name || '').replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '').trim().slice(0, 40);
+    return 'ArpuPlus Day 2 Workbook' + (who ? ' - ' + who : '') + '.pdf';
+  }
   var lastBlob = null, lastName = '';
   function download() {
-    var url = URL.createObjectURL(lastBlob);
-    var a = document.createElement('a');
+    var url = URL.createObjectURL(lastBlob), a = document.createElement('a');
     a.href = url; a.download = lastName; a.rel = 'noopener';
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
   }
 
-  var exportBtn = $('export'), sheetBg = $('sheetBg'), shareBtn = $('share');
+  var saveBtn = $('save'), sheetBg = $('sheetBg'), shareBtn = $('share');
   var canShareFiles = false;
   try {
     canShareFiles = !!(navigator.canShare && window.File &&
@@ -600,26 +369,30 @@
     $('sheetText').textContent = text;
     shareBtn.style.display = ok && canShareFiles ? '' : 'none';
     $('again').style.display = ok ? '' : 'none';
+    $('printInstead').style.display = ok ? 'none' : '';
     sheetBg.classList.add('open');
   }
-
-  exportBtn.addEventListener('click', function () {
-    exportBtn.disabled = true;
-    exportBtn.textContent = 'Preparing…';
-    buildPdf().then(function (bytes) {
-      lastBlob = new Blob([bytes], { type: 'application/pdf' });
-      lastName = fileName();
-      download();
-      openSheet('Your PDF is ready', READY_TEXT, true);
-    }).catch(function (err) {
-      openSheet('The PDF couldn’t be made',
-        ((err && err.message) ? err.message + ' ' : '') + 'Check your internet connection and tap Export PDF again. Your answers are still saved.', false);
-    }).then(function () {
-      exportBtn.disabled = false;
-      exportBtn.textContent = 'Export PDF';
+  if (saveBtn) {
+    var idleLabel = saveBtn.textContent;
+    saveBtn.addEventListener('click', function () {
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Preparing your PDF…';
+      buildPdf().then(function (bytes) {
+        lastBlob = new Blob([bytes], { type: 'application/pdf' });
+        lastName = fileName();
+        download();
+        openSheet('Your PDF is ready', READY_TEXT, true);
+      }).catch(function (err) {
+        openSheet('The PDF couldn’t be made',
+          ((err && err.message) ? err.message + ' ' : '') + 'Check your internet connection and try again. Your answers are still saved.', false);
+      }).then(function () {
+        saveBtn.disabled = false;
+        saveBtn.textContent = idleLabel;
+      });
     });
-  });
+  }
   $('again').addEventListener('click', function () { if (lastBlob) download(); });
+  $('printInstead').addEventListener('click', function () { sheetBg.classList.remove('open'); before(); window.print(); });
   $('close').addEventListener('click', function () { sheetBg.classList.remove('open'); });
   sheetBg.addEventListener('click', function (e) { if (e.target === sheetBg) sheetBg.classList.remove('open'); });
   shareBtn.addEventListener('click', function () {
@@ -629,6 +402,4 @@
       if (e && e.name !== 'AbortError') $('sheetText').textContent = 'Sharing isn’t available in this browser. Tap Download again instead.';
     });
   });
-
-  setStatus();
 })();

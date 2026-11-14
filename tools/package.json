@@ -1,0 +1,8 @@
+{
+  "name": "workbook-tools",
+  "private": true,
+  "description": "Builds index.html, template.pdf and template.json from the workbook HTML",
+  "dependencies": {
+    "puppeteer-core": "23.11.1"
+  }
+}

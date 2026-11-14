@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ArpuPlus · Day 2 Workbook</title>
+<meta name="description" content="Make Time to Lead. Fill in your Day 2 workbook on your phone and export it as a PDF.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="ArpuPlus Leadership Program · Day 2 Workbook">
+<meta property="og:description" content="Make Time to Lead. Fill in your workbook on your phone and export it as a PDF.">
+<meta property="og:image" content="https://arpuplus-workbook.github.io/pages/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#1b1f2a">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,700&display=swap" rel="stylesheet">
+<link rel="preload" as="image" href="pages/page-1.png">
+<style>
+  :root {
+    --ink: #1b1f2a;
+    --red: #b8432a;
+    --cream: #f6f2ec;
+    --ff: "DM Sans", system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans Arabic", "Geeza Pro", Tahoma, sans-serif;
+    --u: 1; /* CSS px per PDF point, set from JS */
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: #11141b;
+    color: var(--ink);
+    font-family: var(--ff);
+    -webkit-tap-highlight-color: transparent;
+  }
+  #book {
+    max-width: 480px;
+    margin: 0 auto;
+    padding: 0 0 calc(88px + env(safe-area-inset-bottom));
+  }
+  .page {
+    position: relative;
+    width: 100%;
+    background-size: 100% 100%;
+    background-repeat: no-repeat;
+    margin-bottom: 10px;
+    overflow: hidden;
+  }
+  .page::before { content: ""; display: block; padding-top: 200%; } /* 390 x 780 */
+  .abs { position: absolute; }
+
+  /* answer boxes, laid exactly over the white boxes of the page image */
+  .f {
+    position: absolute;
+    margin: 0;
+    border: 0;
+    background: transparent;
+    color: var(--ink);
+    font: 400 calc(var(--u) * 12px) / 1.3 var(--ff);
+    padding: calc(var(--u) * 5px) calc(var(--u) * 7px);
+    border-radius: calc(var(--u) * 8px);
+    outline: none;
+    resize: none;
+    -webkit-appearance: none;
+    appearance: none;
+    transition: box-shadow .15s;
+  }
+  input.f { padding-top: 0; padding-bottom: 0; }
+  textarea.f { overflow-y: auto; }
+  .f:focus { box-shadow: inset 0 0 0 calc(var(--u) * 1.5px) var(--red); }
+  .f::placeholder { color: #a9a294; }
+
+
+  /* sketch area on page 4 */
+  #sketch { touch-action: auto; pointer-events: none; border-radius: calc(var(--u) * 12px); }
+  #sketch.on { touch-action: none; pointer-events: auto; box-shadow: inset 0 0 0 calc(var(--u) * 1.5px) var(--red); cursor: crosshair; }
+  .tools { display: flex; gap: calc(var(--u) * 8px); align-items: center; }
+  .tools button {
+    font: 700 calc(var(--u) * 10.5px) / 1 var(--ff);
+    height: calc(var(--u) * 28px);
+    padding: 0 calc(var(--u) * 12px);
+    border-radius: 999px;
+    border: calc(var(--u) * 1px) solid #e0d6c8;
+    background: #fcfaf6;
+    color: var(--ink);
+    cursor: pointer;
+  }
+  .tools button.primary { background: var(--ink); border-color: var(--ink); color: #fff; }
+  .tools button.primary.on { background: var(--red); border-color: var(--red); }
+
+  /* bottom bar */
+  .bar {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
+    display: flex; justify-content: center;
+    padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+    background: rgba(17, 20, 27, .92);
+    -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+    border-top: 1px solid rgba(255, 255, 255, .08);
+    transition: transform .2s;
+  }
+  .bar.hidden { transform: translateY(110%); }
+  .bar-in { width: 100%; max-width: 448px; display: flex; align-items: center; gap: 12px; }
+  .side { flex: 1; min-width: 0; }
+  .status { font-size: 13px; color: #b9b3a8; line-height: 1.3; }
+  .status b { color: #f6f2ec; font-weight: 700; }
+  .link { font: 400 13px/1.3 var(--ff); color: #b9b3a8; background: none; border: 0; padding: 4px 0; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+  .btn {
+    font: 700 15px/1 var(--ff);
+    border: 0; border-radius: 12px;
+    padding: 14px 18px; min-height: 46px;
+    background: var(--red); color: #fff; cursor: pointer;
+  }
+  .btn:disabled { opacity: .6; }
+  .btn.ghost { background: transparent; color: #b9b3a8; padding: 14px 8px; font-weight: 400; }
+
+  /* "PDF ready" sheet */
+  .sheet-bg { position: fixed; inset: 0; z-index: 20; background: rgba(0,0,0,.5); display: none; align-items: flex-end; justify-content: center; }
+  .sheet-bg.open { display: flex; }
+  .sheet {
+    width: 100%; max-width: 480px; background: var(--cream); color: var(--ink);
+    border-radius: 20px 20px 0 0; padding: 22px 20px calc(20px + env(safe-area-inset-bottom));
+  }
+  .sheet h3 { margin: 0 0 6px; font-size: 19px; }
+  .sheet p { margin: 0 0 16px; font-size: 14px; line-height: 1.45; color: #5f636c; }
+  .sheet .row { display: flex; gap: 10px; flex-wrap: wrap; }
+  .sheet .btn { flex: 1; }
+  .sheet .btn.dark { background: var(--ink); }
+  .sheet .btn.ghost { color: #5f636c; flex: 0 0 auto; }
+</style>
+</head>
+<body>
+<main id="book" aria-label="ArpuPlus Day 2 workbook"></main>
+
+<div class="bar" id="bar">
+  <div class="bar-in">
+    <div class="side">
+      <div class="status" id="status"><b>&#10003; Saved on this phone</b></div>
+      <button class="link" id="clearAll" type="button">Clear my answers</button>
+    </div>
+    <button class="btn" id="export" type="button">Export PDF</button>
+  </div>
+</div>
+
+<div class="sheet-bg" id="sheetBg" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+  <div class="sheet">
+    <h3 id="sheetTitle">Your PDF is ready</h3>
+    <p id="sheetText">It should be downloading now. You can also share it straight to WhatsApp or email. If nothing downloaded, open this link in Chrome or Safari and try again.</p>
+    <div class="row">
+      <button class="btn dark" id="share" type="button">Share PDF</button>
+      <button class="btn" id="again" type="button">Download again</button>
+      <button class="btn ghost" id="close" type="button">Close</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

@@ -32,8 +32,12 @@ s = scripts[0]
 
 SHEET = """<div class="sheet-bg" id="sheetBg" role="dialog" aria-modal="true" aria-labelledby="sheetTitle"><div class="sheet">
 <h3 id="sheetTitle">Your PDF is ready</h3><p id="sheetText"></p>
-<div class="row"><button class="btn dark" id="share" type="button">Share PDF</button><button class="btn" id="again" type="button">Download again</button><button class="btn" id="printInstead" type="button">Print instead</button><button class="btn ghost" id="close" type="button">Close</button></div>
+<div class="row"><button class="btn dark" id="share" type="button">Share PDF</button><button class="btn" id="again" type="button">Download again</button><button class="btn" id="printInstead" type="button">Print instead</button><button class="btn ghost" id="sheetClose" type="button">Close</button></div>
 </div></div>"""
+# An id that already exists in the workbook would make the browser pick the
+# workbook's element instead (e.g. the "Closing" section is id="close").
+clash = set(re.findall(r'\bid="([^"]+)"', SHEET + ' id="skd"')) & set(re.findall(r'\bid="([^"]+)"', html))
+assert not clash, "ids already used in the workbook HTML: %s" % sorted(clash)
 html = html[:s.start()] + SHEET + '<script src="app.js"></script>' + html[s.end():]
 
 # 4. head additions

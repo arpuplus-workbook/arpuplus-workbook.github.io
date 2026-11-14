@@ -29,7 +29,7 @@ const PW = 520;
 
   const map = await page.evaluate((PW) => {
     const st = document.createElement('style');
-    st.textContent = `.fab,#skc,#save,.owner,.sheet-bg{display:none!important}
+    st.textContent = `.fab,#skc,#skd,#save,.owner,.sheet-bg{display:none!important}
       html,body{background:var(--cream)}main{max-width:${PW}px;width:${PW}px;margin:0}
       .pg{border-bottom:0!important}`;
     document.head.appendChild(st);
